@@ -1,0 +1,140 @@
+#!/system/xbin/bash
+#获取系统挂载点
+
+#分区大小
+Devsize (){
+       if [ -e /cache/recovery/last_log ] ; then
+    size=$(cat /cache/recovery/last_log | sed -n "/\b$1/{/|/p}" | awk '{print $6}')
+size=`echo $size | sed 's/MB/M/g'`
+            if [ "$size" != "" ];then
+              [ "$dev" != "" ] && echo "$size"
+            else
+               size=$(cat /cache/recovery/last_log | sed -n "/\b$2/{/|/p}" | awk '{print $6}') 
+size=`echo $size | sed 's/MB/M/g'`
+              [ "$dev" != "" ] && echo "$size"
+            fi
+       elif [ -e /proc/dumchar_info ] ; then
+Size=$(cat /proc/dumchar_info | sed -n "/\b$1/p" | awk '{print $2}')
+   Size=`printf "%d\n" $Size` 
+   size=$(($Size / 1024 / 1024))M
+  [ "$dev" != "" ] && echo "$Size ($size)"
+       elif [ -e /proc/partinfo ] ; then
+Size=$(cat /proc/partinfo | sed -n "/\b$1/p" | awk '{print $2}')
+   Size=`printf "%d\n" $Size` 
+   size=$(($size / 1024 / 1024))M
+ [ "$dev" != "" ] && echo "$Size ($size)"  
+        fi
+}
+
+#分区挂载点
+Devname (){
+if [ -f /cache/recovery/last_log ] ;then
+dev=$(cat /cache/recovery/last_log | sed -n "/\b$1/{/$2/p}" | awk '{print $4}')
+     if [ "$dev" == "" ];then   
+dev=$(cat /cache/recovery/last_log | sed -n "/\b$1/{/|/p}" | awk '{print $3}')
+     fi
+elif [ -f /etc/recovery.fstab ] ;then
+dev=$(cat /etc/recovery.fstab | sed -n "/\b$1/{/$2/p}" | awk '{print $3}')
+fi 
+
+if [ "$dev" != "" ];then
+echo "获取本机$1挂载点："
+echo "$dev"
+else
+ if [ -f /cache/recovery/last_log ] ;then
+dev=$(cat /cache/recovery/last_log | sed -n "/\b$3/{/$2/p}" | awk '{print $4}')
+     if [ "$dev" == "" ];then   
+dev=$(cat /cache/recovery/last_log | sed -n "/\b$3/{/|/p}" | awk '{print $3}')
+     fi
+ elif [ -f /etc/recovery.fstab ] ;then
+dev=$(cat /etc/recovery.fstab | sed -n "/\b$3/{/$2/p}" | awk '{print $3}')
+ fi
+[ "$dev" != "" ] && echo "获取本机到$3挂载点：" && echo "$dev"
+fi
+}
+
+#备份
+Bakdev (){
+backup=/sdcard/EXBOOT/backup
+[ ! -d $backup ] && mkdir -p $backup
+  if [ -e $backup/$1.img ] ;then
+read -n1 -t5 -p "已有备份，是否重新备份?(y/n)" yn 
+echo
+    if [ "$yn" == "y" ] || [ "yn" == "Y" ];then
+    rm -rf $backup/$1.img
+   busybox dd if=$2 of=$backup/$1.img bs=$3 count=1
+    fi
+  else
+   busybox dd if=$2 of=$backup/$1.img bs=$3 count=1
+  fi
+}
+
+#检测平台
+Cpujc (){
+pt=`uname -m`
+cpu=$(cat /proc/cpuinfo | sed -n "/\bHardware/p" | awk '{print $3}')
+echo "  平台:$pt        CPU:$cpu"
+echo
+}
+Cpujc
+
+#boot挂载点
+Bootdev (){
+Devname boot emmc boot
+Devsize boot
+Bakdev boot $dev $size
+}
+Bootdev
+
+#recovery挂载点
+Recdev (){
+Devname recovery emmc recovery
+Devsize recovery
+Bakdev recovery $dev $size
+}
+Recdev
+
+#基带挂载
+Nvramdev (){
+Devname nvram emmc modem
+Devsize nvram modem
+[ "$dev" != "" ] && [ "$size" != "" ] && Bakdev nvram $dev $size
+}
+Nvramdev
+
+#logo挂载
+Logodev (){
+   dev=/dev/logo
+       if [ -e /proc/dumchar_info ] ; then
+Size=$(cat /proc/dumchar_info | sed -n "/\blogo/p" | awk '{print $2}')
+       elif [ -e /proc/partinfo ] ; then
+Size=$(cat /proc/partinfo | sed -n "/\blogo/p" | awk '{print $2}')
+       fi
+   Size=`printf "%d\n" $Size` 
+   size=$(($Size / 1024 / 1024))M
+   [ "$dev" != "" ] && echo "获取本机logo挂载点：
+$dev" && echo "$Size ($size)"
+[ "$dev" != "" ] && [ "$size" != "" ] && Bakdev logo $dev $size
+}
+Logodev 
+
+#system挂载点
+Sysdev (){
+Devname system ext4 system
+Devsize android system
+}
+Sysdev
+
+#data挂载点
+Datadev (){
+Devname data ext4 data
+Devsize usrdata data
+}
+Datadev
+
+#储存挂载
+Sddev () {
+Devname emmc vfat sdcard 
+Devsize fat sdcard
+}
+Sddev

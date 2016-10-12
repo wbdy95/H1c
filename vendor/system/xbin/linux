@@ -1,0 +1,141 @@
+##########################################
+#Ubuntu boot script V6.1 for Android     #
+#Built by Zachary Powell (zacthespack)   #
+#Thanks to:                              #
+#Johan (sciurius)                        #
+#Marshall Levin                          #
+#and to everyone at XDA!                 #
+##########################################
+#Check for root                          #
+##########################################
+version=20160101
+Uptime () {
+trap "echo" EXIT
+i=0;
+while (( i<=100 ));do
+    echo -ne "\e[1;31m正在启动[ $((i++))% ]...\r \e[0m"
+    usleep $((1000*$1))
+done
+}
+busybox mount -o remount,rw,exec /system &> /dev/null
+busybox mount -o remount,rw,exec /data &>/dev/null
+busybox mount -o remount,rw,exec / &>/dev/null
+[ ! -e /system/xbin/busybox ] && echo "请复制busybox到/system/xbin下权限全开！"
+[ ! -h /system/xbin/awk ] && busybox --install -s /system/xbin
+echo
+echo "  欢迎使用 Ubuntu 14.10 & exboot
+             ($version) "
+echo -e "\a"
+perm=$(id|cut -b 5)
+if [ "$perm" != "0" ];then 
+echo "该脚本需要root！ 请输入: su"; exit; 
+fi
+busybox mount -o remount,rw,exec /system &> /dev/null
+busybox mount -o remount,rw,exec /storage/sdcard0 &>/dev/null
+busybox mount -o remount,rw,exec /storage/sdcard1 &>/dev/null
+
+##########################################
+#Set up veriables                        #
+##########################################
+#此处为检测linux.img位置
+if [ -e /sdcard/EXBOOT/ubuntu/linux.img ];then
+export kit=/sdcard/EXBOOT/ubuntu/linux.img
+elif [ -e /storage/sdcard0/EXBOOT/ubuntu/linux.img ];then
+export kit=/storage/sdcard0/EXBOOT/ubuntu/linux.img
+elif [ -e /storage/sdcard1/EXBOOT/ubuntu/linux.img ];then
+export kit=/storage/sdcard1/EXBOOT/ubuntu/linux.img
+else
+GET_SDPATH=`env | grep "EXTERNAL_STORAGE"`
+SD_PATH=${GET_SDPATH#*=}
+ub=$SD_PATH/EXBOOT/ubuntu
+export kit=$ub/linux.img
+fi
+#echo $kit
+#export kit=/storage/sdcard0/EXBOOT/ubuntu/linux.img #报错请去掉前面一个#并修改此处0
+#echo "请检查linux.img镜像位置是否一致..."
+export bin=/system/bin
+export ubuntu=/data/local/ubuntu
+export USER=root
+if [[ ! -d $ubuntu ]]; then 
+mkdir -p $ubuntu; 
+fi
+export PATH=$bin:/usr/bin:/usr/local/bin:/usr/sbin:/bin:/usr/local/sbin:/usr/games:/usr/local/sbin/shell:$PATH
+export TERM=linux
+export HOME=/root
+##########################################
+#Set up loop device                      #
+##########################################
+
+if [ -b /dev/block/loop255 ]; then
+	echo 
+else
+	busybox mknod /dev/block/loop255 b 7 255
+fi
+#mount -o loop,noatime -t ext4 $kit $ubuntu
+busybox losetup /dev/block/loop255 $kit &>/dev/null
+##########################################
+#Mount all required partitions           #
+##########################################
+  if [ ! -e $ubuntu/bin ];then
+busybox mount -t ext4 /dev/block/loop255 $ubuntu &>/dev/null
+busybox mount -t devpts devpts $ubuntu/dev/pts &>/dev/null
+busybox mount -t proc proc $ubuntu/proc &>/dev/null
+busybox mount -t sysfs sysfs $ubuntu/sys &>/dev/null
+[ ! -d $ubuntu/sdcard ] && mkdir -p $ubuntu/sdcard
+busybox mount -o bind /sdcard $ubuntu/sdcard &>/dev/null
+[ ! -d $ubuntu/system ] && mkdir -p $ubuntu/system
+busybox mount -o bind /system $ubuntu/system &>/dev/null
+[ ! -d $ubuntu/cache ] && mkdir -p $ubuntu/cache
+busybox mount -o bind /cache $ubuntu/cache &>/dev/null
+[ ! -d $ubuntu/data ] && mkdir -p $ubuntu/data
+busybox mount -o bind /data $ubuntu/data &>/dev/null
+[ ! -d $ubuntu/mnt ] && mkdir -p $ubuntu/mnt
+busybox mount -o bind /mnt/obb $ubuntu/mnt &>/dev/null
+  fi
+##########################################
+#Checks if you have a external sdcard    #
+#and mounts it if you do                 #
+##########################################
+if [ -d /sdcard/external_sd ]; then
+[ ! -d $ubuntu/external_sd ] && mkdir -p $ubuntu/external_sd
+	busybox mount -o bind /sdcard/external_sd  $ubuntu/external_sd &> /dev/null
+fi
+if [ -d /Removable/MicroSD ]; then
+[ ! -d $ubuntu/external_sd ] && mkdir -p $ubuntu/external_sd &>/dev/null
+	busybox mount -o bind /Removable/MicroSD  $ubuntu/external_sd &> /dev/null
+fi
+##########################################
+#Sets up network forwarding              #
+##########################################
+busybox sysctl -w net.ipv4.ip_forward=1 &>/dev/null
+echo "nameserver 8.8.8.8" > $ubuntu/etc/resolv.conf
+echo "nameserver 8.8.4.4" >> $ubuntu/etc/resolv.conf
+echo "127.0.0.1 localhost" > $ubuntu/etc/hosts
+#echo "Ubuntu is configured with SSH and VNC servers that can be accessed from the IP:"
+ifconfig eth0 &> /dev/null
+
+##########################################
+#Chroot into ubuntu                      #
+##########################################
+echo "  启动中...      "
+#Uptime 3
+busybox chroot $ubuntu /root/init.sh
+##########################################
+#Shut down ubuntu                        #
+##########################################
+echo " 成功关闭 Ubuntu & exboot..."
+for pid in `lsof | grep $ubuntu | sed -e's/  / /g' | cut -d' ' -f2`; do kill -9 $pid >/dev/null 2>&1; done
+sleep 1
+busybox umount -l $ubuntu/sdcard &>/dev/null
+busybox umount -l $ubuntu/system &>/dev/null
+busybox umount -l $ubuntu/cache &>/dev/null
+busybox umount -l $ubuntu/data &>/dev/null
+busybox umount $ubuntu/external_sd &>/dev/null
+busybox umount $ubuntu/dev/pts &>/dev/null
+busybox umount $ubuntu/proc &>/dev/null
+busybox umount $ubuntu/sys &>/dev/null
+losetup -d /dev/block/loop255 &>/dev/null
+busybox umount -l $ubuntu &>/dev/null
+busybox clear
+
+
